@@ -1,0 +1,84 @@
+import io
+import re
+from lxml import etree
+import pytesseract
+from PIL import Image
+import requests
+import xlwt
+
+from selenium import webdriver
+
+
+tesseract_cmd = r'C:\Program Files (x86)\Tesseract-OCR\tesseract'
+pytesseract.pytesseract.tesseract_cmd =tesseract_cmd
+
+headers = {
+        'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36',
+}
+div_list = []
+titlelist = []
+pricelist = []
+desclist =[]
+localist = []
+httplist = []
+for i in range(6):
+    url = 'https://www.ziroom.com/z/z1-d23008617-b611100343-p'+str(i+1)+'/'
+    ret = requests.get(url=url, headers=headers).text
+    with open('ziru.html', 'w', encoding='utf8') as f:
+        f.write(ret)
+    with open('ziru.html', 'r', encoding='utf8') as f:
+        ret = f.read()
+    img_url = re.findall('background-image: url\((.*?)\);background-position:', ret)[0]
+    px_list = ['0', '21.4', '42.8', '64.2', '85.6', '107', '128.4', '149.8', '171.2', '192.6']
+    img_urls = 'https:' + img_url
+    # img_url='https://static8.ziroom.com/phoenix/pc/images/price/new-list/48d4fa3aa7adf78a1feee05d78f33700.png'
+    data = requests.get(url=img_urls, headers=headers).content
+    image = Image.open(io.BytesIO(data))
+    vcode = pytesseract.image_to_string(image, lang='eng',
+                                        config='--psm 6 --oem 3 -c tessedit_char_whitelist=0123456789').replace(" ",
+                                                                                                                "").strip()
+    font_dict = {}
+    for k, v in enumerate(vcode):
+        font_dict[px_list[k]] = v
+    for i in font_dict:
+        ret = ret.replace(f'<span class="num" style="background-image: url({img_url});background-position: -{i}px"></span>',
+                          font_dict[i])
+    page_html = etree.HTML(ret)
+    div_list = page_html.xpath('/html//section/div[3]/div[2]/div')
+    for div in div_list:
+        try:
+            name = div.xpath('./div[2]/h5/a/text()')[0]
+            desc = div.xpath('./div[2]/div[1]/div[1]/text()')
+            location = div.xpath('./div[2]/div[1]/div[2]/text()')
+            http = div.xpath('./div[2]/h5/a/@href')
+        except:
+            continue
+        money = ''
+        for i in ''.join(div.xpath('./div[2]/div[2]//text()')):
+            money += i.strip()
+        titlelist.append(name)
+        pricelist.append(money)
+        desclist.append(desc)
+        localist.append(location)
+        httplist.append(http)
+def save_as_xls(titlelist, pricelist,desclist,localist,httplist):
+    workbook = xlwt.Workbook(encoding="utf-8")
+    worksheet = workbook.add_sheet("sheet1")
+    titles = ["小区名", "租金","面积","地铁距离","链接"]
+    for index, title in enumerate(titles):
+        worksheet.write(0, index, title)
+    for i, info in enumerate(titlelist):
+        worksheet.write(i + 1, 0, info)
+    for j, price in enumerate(pricelist):
+        worksheet.write(j + 1, 1, price)
+    for k, desc in enumerate(desclist):
+        worksheet.write(k + 1, 2, desc)
+    for l, local in enumerate(localist):
+        worksheet.write(l + 1, 3, local)
+    for m, ucl in enumerate(httplist):
+        worksheet.write(m + 1, 4, ucl)
+    workbook.save('北京丰台园房租价格信息-----自如.xls')
+
+
+
+save_as_xls(titlelist,pricelist,desclist,localist,httplist)
